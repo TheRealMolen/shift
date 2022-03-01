@@ -1,5 +1,50 @@
 #include "DebouncedInput.h"
 
+class ModalPot {
+public:
+  static constexpr uint8_t Pin = 0;
+  static constexpr uint8_t MaxModes = 8;
+  static constexpr int     Threshold = 10;
+
+  ModalPot() {
+    m_vals[0] = analogRead(Pin);
+  }
+
+  int getVal(uint8_t mode) const { return m_vals[mode]; }
+  int getLastMode() const { return m_lastMode; }
+
+  bool hasMoved() const {
+    int currVal = analogRead(Pin);
+    int prevVal = m_vals[m_lastMode];
+    int delta = abs(currVal - prevVal);
+    return (delta > Threshold);
+  }
+
+  void update(uint8_t mode) {
+    int currVal = analogRead(Pin);
+
+    if (mode == m_lastMode) {
+      m_vals[mode] = currVal;
+      return;
+    }
+
+    int prevVal = m_vals[m_lastMode];
+    int delta = abs(currVal - prevVal);
+    if (delta < Threshold) {
+      return;
+    }
+
+    m_vals[mode] = currVal;
+    m_lastMode = mode;
+  }
+  
+
+private:
+  int m_vals[MaxModes] = {};
+  uint8_t m_lastMode = 0;
+};
+
+
 #define PIN_UIPIXEL       9
 #define PIN_BTN_THRU      10
 #define PIN_BTN_CHANNEL   11
@@ -12,6 +57,7 @@ using PlayBtn = DebouncedInput<PIN_BTN_REC, 2>;
 ThruBtn thruButton;
 ChnlBtn channelButton;
 PlayBtn recButton;
+ModalPot pot;
 
 enum UIMode {
   UIMode_Default = 0,
@@ -61,7 +107,15 @@ void updateUI() {
 
   uint8_t released = thruButton.releasedFlag() | channelButton.releasedFlag() | recButton.releasedFlag();
 
-  if (changes) {
+  uint8_t unshiftedButtons = oldDown & ~oldShift;
+  if (pot.hasMoved() && unshiftedButtons) {
+    changes |= 0x10;
+    pressed |= 0x10;
+  }
+  
+  uint8_t mode = oldShift;
+
+  if (changes) {    
     // first: figure out if any buttons have just become shift
     if (pressed) {
       uint8_t addedShift = oldDown & ~released & ~oldShift;
@@ -75,7 +129,7 @@ void updateUI() {
       }
     }
     
-    uint8_t mode = thruButton.shiftFlag() | channelButton.shiftFlag() | recButton.shiftFlag();
+    mode = thruButton.shiftFlag() | channelButton.shiftFlag() | recButton.shiftFlag();
     uint8_t action = released & ~(mode | oldShift);
 
     // FIXME: the following sequence results in a surprising action:
@@ -95,6 +149,11 @@ void updateUI() {
     }
   }
 
+  // note: if we have any buttons down but haven't yet marked them as shifted,
+  //       we don't want to update the existing pot, or we might miss the edge
+  //       where it should latch and shift the button
+  if (!unshiftedButtons)
+    pot.update(mode);
 }
 
 
@@ -104,15 +163,29 @@ void setup() {
   Serial.println("knock knock, neo");
   
   pinMode(13, OUTPUT);
+  digitalWrite(13, 0);
 
   channelButton.init();
   thruButton.init();
   recButton.init();
+
+  pot.update(0);
 }
 
 
-void loop() {
-  random(100);
-  
+uint32_t lastUpdate = millis();
+
+void loop() {  
   updateUI();
+  
+  if ((millis() - lastUpdate) > 1000) {
+    Serial.print("POTS: ");
+    for(byte i=0; i<8; ++i) {
+      Serial.print(pot.getVal(i));
+      Serial.print("  ");
+    }
+    Serial.print("    lastMode=");
+    Serial.println(pot.getLastMode());
+    lastUpdate = millis();
+  }
 }
