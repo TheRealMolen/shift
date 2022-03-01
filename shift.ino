@@ -13,11 +13,34 @@ ThruBtn thruButton;
 ChnlBtn channelButton;
 PlayBtn recButton;
 
+enum UIMode {
+  UIMode_Default = 0,
+  
+  UIMode_Thru = ThruBtn::Flag,
+  UIMode_Chnl = ChnlBtn::Flag,
+  UIMode_Play = PlayBtn::Flag,
+  
+  UIMode_ThruChnl = ThruBtn::Flag | ChnlBtn::Flag,
+  UIMode_ThruPlay = ThruBtn::Flag | PlayBtn::Flag,
+  UIMode_ChnlPlay = ChnlBtn::Flag | PlayBtn::Flag,
+};
+
 
 void uiAction(uint8_t action, uint8_t mode) {
+  const char* modeName = "UNKNOWN";
+  switch (mode) {
+    case UIMode_Default:  modeName = "d"; break;     
+    case UIMode_Thru:     modeName = "t"; break;     
+    case UIMode_Chnl:     modeName = "c"; break;     
+    case UIMode_Play:     modeName = "p"; break;     
+    case UIMode_ThruChnl: modeName = "tc"; break;     
+    case UIMode_ThruPlay: modeName = "tp"; break;     
+    case UIMode_ChnlPlay: modeName = "cp"; break;      
+  }
+  Serial.print("ACTION: ");
   Serial.print(action);
   Serial.print("/");
-  Serial.print(mode);
+  Serial.println(modeName);
 }
 
 void updateUI() {
@@ -35,31 +58,14 @@ void updateUI() {
     changes |= PlayBtn::Flag;
 
   uint8_t pressed = ~oldDown & changes;
-  uint8_t newDown = oldDown ^ changes;
 
   uint8_t released = thruButton.releasedFlag() | channelButton.releasedFlag() | recButton.releasedFlag();
 
   if (changes) {
-    Serial.print("oD=");
-    Serial.print(oldDown, HEX);
-    Serial.print(", oS=");
-    Serial.print(oldShift, HEX);
-    Serial.print(", chg=");
-    Serial.print(changes, HEX);
-    Serial.print(", nD=");
-    Serial.print(newDown, HEX);
-    Serial.print(", press=");
-    Serial.print(pressed, HEX);
-    Serial.print(", rel=");
-    Serial.print(released, HEX);
-    
     // first: figure out if any buttons have just become shift
     if (pressed) {
       uint8_t addedShift = oldDown & ~released & ~oldShift;
       if (addedShift) {
-        Serial.print("    NEW SHIFT=");
-        Serial.print(addedShift, HEX);
-
         if (addedShift & ThruBtn::Flag)
           thruButton.setShift();
         if (addedShift & ChnlBtn::Flag)
@@ -69,20 +75,24 @@ void updateUI() {
       }
     }
     
-    uint8_t mode = thruButton.shiftFlag() | channelButton.shiftFlag() | recButton.shiftFlag();    
+    uint8_t mode = thruButton.shiftFlag() | channelButton.shiftFlag() | recButton.shiftFlag();
+    uint8_t action = released & ~(mode | oldShift);
+
+    // FIXME: the following sequence results in a surprising action:
+    //    - hold A
+    //    - hold B  (A is now SHIFT)
+    //    - release A
+    //    - release B   --> ACTION B/default    
 
     // then figure out what mode/button combo just got released
-    if (released) {
-      Serial.print("    ACTION: ");
-      if (released & thruButton.getFlag())
+    if (action) {
+      if (action & thruButton.getFlag())
         uiAction(thruButton.getId(), mode);
-      else if (released & channelButton.getFlag())
+      else if (action & channelButton.getFlag())
         uiAction(channelButton.getId(), mode);
-      else if (released & recButton.getFlag())
+      else if (action & recButton.getFlag())
         uiAction(recButton.getId(), mode);
     }
-    
-    Serial.println();
   }
 
 }

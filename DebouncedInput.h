@@ -49,7 +49,7 @@ protected:
   void setState(bool isDownNow) {
     m_isSettling = true;
 
-    if (m_isDown && !isDownNow && !m_isShift) {
+    if (m_isDown && !isDownNow) {
       m_justReleased = true;
     }
     else {
